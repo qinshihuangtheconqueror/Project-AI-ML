@@ -1,211 +1,163 @@
 import gradio as gr
 import pandas as pd
-import joblib
 import numpy as np
+import joblib
+from scipy.stats import boxcox
 
-# Load model và preprocessing
-model = joblib.load("project/checkpoint/random_forest.joblib")
-preprocessing = joblib.load("project/checkpoint/preprocessing.joblib")
+numerical_cols = ['Age', 'Height', 'Weight', 'FCVC', 'NCP', 'CH2O', 'FAF', 'TUE']
+categorical_cols = ['Gender', 'family_history_with_overweight', 'FAVC', 'CAEC', 'SMOKE', 'SCC', 'CALC', 'MTRANS']
+target_label = ['NObeyesdad']
 
-# Đọc danh sách triệu chứng từ file Train.csv
-df = pd.read_csv("project/disease prediction/Train.csv")
-symptoms = df.columns[:-1].tolist()  # Bỏ cột prognosis
+def load_model(model):
+    if model == "Logistic regression":
+        pred_model = joblib.load("New folder (3)/checkpoint/logistic_regression.joblib")
+    elif model == "K nearest neighbors":
+        pred_model = joblib.load("New folder (3)/checkpoint/knn.joblib")
+    elif model == "Decision tree":
+        pred_model = joblib.load("New folder (3)/checkpoint/decision_tree.joblib")
+    elif model == "Random forest":
+        pred_model = joblib.load("New folder (3)/checkpoint/random_forest.joblib")
+    elif model == "XGBoost":
+        pred_model = joblib.load("New folder (3)/checkpoint/xg_boost.joblib")
+    elif model == "Voting classifier":
+        pred_model = joblib.load("New folder (3)/checkpoint/votingClassifier.joblib")
+    return pred_model
 
-# Lấy danh sách bệnh hợp lệ (chuẩn hóa)
-def normalize(s):
-    # Chuyển về chữ thường và loại bỏ khoảng trắng thừa
-    s = str(s).strip().lower()
-    # Loại bỏ dấu ngoặc đơn và nội dung trong đó
-    s = s.split('(')[0].strip()
-    # Loại bỏ các ký tự đặc biệt
-    s = ''.join(c for c in s if c.isalnum() or c.isspace())
-    return s.strip()
+preprocessing = joblib.load("New folder (3)/checkpoint/preprocessing.joblib")
 
-train_diseases = set(normalize(x) for x in df['prognosis'].unique())
-desc_df = pd.read_csv("project/disease prediction/symptom_Description.csv")
-desc_df['Disease_norm'] = desc_df['Disease'].apply(normalize)
-desc_diseases = set(desc_df['Disease_norm'].unique())
-precaution_df = pd.read_csv("project/disease prediction/symptom_precaution.csv")
-precaution_df['Disease_norm'] = precaution_df['Disease'].apply(normalize)
-precaution_diseases = set(precaution_df['Disease_norm'].unique())
+label_mapping = {
+    0: 'Insufficient_Weight',
+    1: 'Normal_Weight',
+    2: 'Overweight_Level_I',
+    3: 'Overweight_Level_II',
+    4: 'Obesity_Type_I',
+    5: 'Obesity_Type_II',
+    6: 'Obesity_Type_III'
+}
 
-valid_diseases = train_diseases & desc_diseases & precaution_diseases
+recommendations = {
+    'Insufficient_Weight': "Bạn nên tăng cường dinh dưỡng và tham khảo ý kiến chuyên gia để cải thiện cân nặng.",
+    'Normal_Weight': "Bạn đang có cân nặng hợp lý, hãy duy trì lối sống lành mạnh và tiếp tục theo dõi sức khỏe.",
+    'Overweight_Level_I': "Bạn nên chú ý chế độ ăn, tăng cường vận động và kiểm soát cân nặng.",
+    'Overweight_Level_II': "Bạn nên giảm lượng calo, tập thể dục đều đặn và theo dõi sức khỏe thường xuyên.",
+    'Obesity_Type_I': "Bạn nên tham khảo ý kiến bác sĩ để có phác đồ giảm cân phù hợp và an toàn.",
+    'Obesity_Type_II': "Bạn cần có sự can thiệp chuyên sâu từ chuyên gia dinh dưỡng và bác sĩ.",
+    'Obesity_Type_III': "Bạn nên đến cơ sở y tế để được tư vấn và hỗ trợ giảm cân an toàn, tránh biến chứng nguy hiểm."
+}
 
-# Thử load LabelEncoder nếu có
-try:
-    from sklearn.preprocessing import LabelEncoder
-    label_encoder = None
-    # Nếu preprocessing có LabelEncoder, lấy ra
-    if hasattr(preprocessing, 'named_transformers_'):
-        for v in preprocessing.named_transformers_.values():
-            if isinstance(v, LabelEncoder):
-                label_encoder = v
-    elif hasattr(preprocessing, 'classes_'):
-        # Trường hợp lưu trực tiếp LabelEncoder
-        label_encoder = preprocessing
-except Exception:
-    label_encoder = None
+def predict_obesity_level(model_name, age, height, weight, fcvc, ncp, ch2o, faf, tue, 
+                          gender, family_history_with_overweight, favc, caec, smoke, 
+                          scc, calc, mtrans):
+    model = load_model(model_name)
+    x = pd.DataFrame({
+        'Gender': [gender],
+        'Age': [age],
+        'Height': [height],
+        'Weight': [weight],
+        'family_history_with_overweight': [family_history_with_overweight],
+        'FAVC': [favc],
+        'FCVC': [fcvc],
+        'NCP': [ncp],
+        'CAEC': [caec],
+        'SMOKE': [smoke],
+        'CH2O': [ch2o],
+        'SCC': [scc],
+        'FAF': [faf],
+        'TUE': [tue],
+        'CALC': [calc],
+        'MTRANS': [mtrans]
+    })
+    if age > 0:
+        try:
+            x['Age'], _ = boxcox(x['Age'])
+        except ValueError:
+            x['Age'] = np.log1p(x['Age'])
+    else:
+        x['Age'] = np.log1p(x['Age'])
+    x['FCVC'] = pd.cut(x['FCVC'], bins=[0.5,1.5,2.5,3.5], labels=[1,2,3]).astype('float64')
+    x['NCP'] = pd.cut(x['NCP'], bins=[0.5,1.5,2.5,3.5,4.5], labels=[1,2,3,4]).astype('float64')
+    x['CH2O'] = pd.cut(x['CH2O'], bins=[0.5,1.5,2.5,3.5], labels=[1,2,3]).astype('float64')
+    x['FAF'] = pd.cut(x['FAF'], bins=[-0.5,0.5,1.5,2.5,3.5], labels=[0,1,2,3]).astype('float64')
+    x['TUE'] = pd.cut(x['TUE'], bins=[-0.5,0.5,1.5,2.5], labels=[0,1,2]).astype('float64')
+    int64_columns = x.select_dtypes(include='int64').columns
+    x[int64_columns] = x[int64_columns].astype('float64')
+    x = preprocessing.transform(x)
+    x = pd.DataFrame(x, columns=preprocessing.get_feature_names_out())
+    y = model.predict(x)
+    label = label_mapping[y[0]]
+    advice = recommendations[label]
+    return label, advice
 
-def predict_disease(*symptom_values):
-    # Convert True/False to 1/0
-    symptom_values = [1 if v else 0 for v in symptom_values]
-    input_data = pd.DataFrame([symptom_values], columns=symptoms)
+with gr.Blocks(theme=gr.themes.Soft(primary_hue="indigo")) as app:
+    gr.Markdown("# Obesity Level Classification")
+    gr.Markdown("Predict the level of obesity based on various health and lifestyle factors.")
+    gr.Markdown("Note: ")
+    gr.Markdown("The value of Consumption of vegetables (FCVC) ranges from 1 to 3.")
+    gr.Markdown("The value of Number of main meals (NCP) ranges from 1 to 4.")
+    gr.Markdown("The value of Consumption of water daily (CH2O) ranges from 1 to 3.")
+    gr.Markdown("The value of Physical activity frequency (FAF) ranges from 0 to 3.")
+    gr.Markdown("The value of Time using tech devices (TUE) ranges from 0 to 2.")
 
-    # Preprocess input data
-    X_transformed = preprocessing.transform(input_data)
-    
-    # Predict
-    prediction = model.predict(X_transformed)[0]
-    
-    # Debug: Print prediction and label_encoder info
-    print(f"Raw prediction: {prediction}")
-    print(f"Label encoder classes: {label_encoder.classes_ if label_encoder else 'No label encoder'}")
-    
-    # Convert index to disease name
-    if isinstance(prediction, (int, np.integer)):
-        if label_encoder is not None:
-            prediction = label_encoder.inverse_transform([prediction])[0]
-        else:
-            prediction = df['prognosis'].unique()[prediction]
-    
-    prediction_norm = normalize(str(prediction))
-    
-    # Debug: Print info for checking
-    print(f"Prediction after conversion: {prediction}")
-    print(f"Normalized prediction: {prediction_norm}")
-    print(f"Valid diseases: {sorted(valid_diseases)}")
-    
-    # Only return if disease is valid
-    if prediction_norm not in valid_diseases:
-        return f"Disease '{prediction}' does not have description or precaution information."
-    
-    # Get disease description
-    description = desc_df[desc_df['Disease_norm'] == prediction_norm]['Description'].values[0]
-    
-    # Get precautions
-    precaution_list = precaution_df[precaution_df['Disease_norm'] == prediction_norm].iloc[0, 1:5].tolist()
-    
-    return f"""
-<div class='diagnosis-card'>
-    <h2>🦠 {prediction}</h2>
-    <p style='font-size:1.15em; margin-bottom:20px; color:#222;'>{description}</p>
-    <b style='font-size:1.1em;'>🛡️ Precautionary measures:</b>
-    <ul style='font-size:1.1em; margin-top:10px;'>
-        {''.join([f'<li>{p.strip()}</li>' for p in precaution_list])}
-    </ul>
-</div>
-"""
+    with gr.Group():
+        gr.Markdown("## Personal Status")
+        with gr.Row():
+            Age = gr.Number(label="Age", info="Nhập tuổi của bạn (năm)")
+            Height = gr.Number(label="Height", info="Nhập chiều cao (mét)")
+            Weight = gr.Number(label="Weight", info="Nhập cân nặng (kg)")
+        with gr.Row():
+            Gender = gr.Dropdown(label="Gender", choices=["Male", "Female"], info="Chọn giới tính của bạn")
+            Family_history = gr.Dropdown(label="Family history with overweight", choices=["yes", "no"], info="Gia đình bạn có ai từng thừa cân/béo phì không?")
 
-# Gradio UI in English
-with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue")) as app:
-    gr.Markdown("""
-    <style>
-    /* Checkbox style */
-    .gr-checkbox label {
-        background: #f1f5f9;
-        border-radius: 12px !important;
-        padding: 14px 18px !important;
-        margin: 10px 0 !important;
-        font-size: 1.08em;
-        transition: background 0.2s, box-shadow 0.2s;
-        box-shadow: 0 2px 8px #2563eb11;
-        border: 1.5px solid #e0e7ef;
-    }
-    .gr-checkbox label:hover {
-        background: #e0e7ff;
-        border: 1.5px solid #2563eb;
-        box-shadow: 0 4px 16px #2563eb22;
-    }
-    /* Nút Diagnose */
-    #diagnose-btn button {
-        background: linear-gradient(90deg,#2563eb,#60a5fa) !important;
-        color: white !important;
-        font-weight: bold;
-        font-size: 1.2em;
-        border-radius: 10px;
-        margin: 28px 0 18px 0;
-        padding: 14px 36px;
-        box-shadow: 0 4px 16px #2563eb33;
-        transition: background 0.2s, box-shadow 0.2s;
-    }
-    #diagnose-btn button:hover {
-        background: linear-gradient(90deg,#1e40af,#60a5fa) !important;
-        box-shadow: 0 8px 32px #2563eb44;
-    }
-    /* Card kết quả */
-    #result-card {
-        margin-top: 24px;
-    }
-    #result-card .diagnosis-card {
-        border: 3px solid #2563eb;
-        border-radius: 18px;
-        padding: 32px;
-        background: linear-gradient(90deg,#e0e7ff,#f8fafc);
-        box-shadow: 0 8px 32px #1e40af22;
-        font-size: 1.15em;
-        animation: fadeIn 0.7s;
-    }
-    @keyframes fadeIn {
-        from {opacity: 0; transform: translateY(30px);}
-        to {opacity: 1; transform: none;}
-    }
-    #result-card h2 {
-        color: #1e40af;
-        font-size: 2em;
-        font-weight: bold;
-        margin-bottom: 16px;
-    }
-    #result-card ul {
-        margin-top: 12px;
-        margin-bottom: 0;
-    }
-    </style>
-    <div style='text-align:center; padding: 20px 0;'>
-        <h1 style='color:#2563eb; font-size:2.5em;'>🩺 Disease Diagnosis from Symptoms</h1>
-        <p style='font-size:1.2em;'>Please select the symptoms you are experiencing:</p>
-    </div>
-    """)
-    
-    # Create checkboxes for each symptom, chia thành 4 cột
-    symptom_inputs = []
-    num_cols = 4
-    with gr.Row():
-        cols = [gr.Column() for _ in range(num_cols)]
-        for idx, symptom in enumerate(symptoms):
-            with cols[idx % num_cols]:
-                symptom_inputs.append(gr.Checkbox(label=symptom))
-    
-    # Predict button and output
-    predict_btn = gr.Button("Diagnose", elem_id="diagnose-btn")
-    output = gr.Markdown(elem_id="result-card")
-    
-    # Event handler
-    def predict_and_format(*args):
-        result = predict_disease(*args)
-        # Định dạng lại kết quả cho đẹp
-        if result.startswith("Predicted disease:"):
-            lines = result.strip().split("\n")
-            disease = lines[0].replace("Predicted disease:", "").strip()
-            desc = lines[2].replace("Description:", "").strip()
-            precautions = [l.strip() for l in lines[4:] if l.strip() and l.strip()[0].isdigit()]
-            return f"""
-<div class='diagnosis-card'>
-    <h2>🦠 {disease}</h2>
-    <p style='font-size:1.15em; margin-bottom:20px; color:#222;'>{desc}</p>
-    <b style='font-size:1.1em;'>🛡️ Precautionary measures:</b>
-    <ul style='font-size:1.1em; margin-top:10px;'>
-        {''.join([f'<li>{p.strip()}</li>' for p in precautions])}
-    </ul>
-</div>
-"""
-        else:
-            return f"<div style='color:red; font-weight:bold; padding:16px'>{result}</div>"
-    
-    predict_btn.click(
-        fn=predict_and_format,
-        inputs=symptom_inputs,
-        outputs=output
+    with gr.Group():
+        gr.Markdown("## Routine")
+        with gr.Row():
+            FAF = gr.Number(label="Physical activity frequency (FAF)", minimum=0, maximum=3, step=1, info="Tần suất hoạt động thể chất (0: không, 3: thường xuyên)")
+            TUE = gr.Number(label="Time using tech devices (TUE)", minimum=0, maximum=2, step=1, info="Thời gian sử dụng thiết bị công nghệ (0: ít, 2: nhiều)")
+        with gr.Row():
+            MTRANS = gr.Dropdown(label="Mode of transportation (MTRANS)", choices=["Automobile", "Motorbike", "Bike", "Public Transportation", "Walking"], info="Phương tiện di chuyển chính của bạn")
+
+    with gr.Group():
+        gr.Markdown("## Eating Habits")
+        with gr.Row():
+            FCVC = gr.Number(label="Consumption of vegetables (FCVC)", minimum=1, maximum=3, step=1, info="Tần suất ăn rau củ (1: ít, 3: nhiều)")
+            NCP = gr.Number(label="Number of main meals (NCP)", minimum=1, maximum=4, step=1, info="Số bữa ăn chính mỗi ngày (1-4)")
+        with gr.Row():
+            FAVC = gr.Dropdown(label="Consumption of high caloric food (FAVC)", choices=["yes", "no"], info="Bạn có thường ăn đồ ăn nhiều calo không?")
+            CAEC = gr.Dropdown(label="Consumption of food between meals (CAEC)", choices=["no", "Sometimes", "Frequently", "Always"], info="Bạn có ăn vặt giữa các bữa chính không?")
+            CH2O = gr.Number(label="Consumption of water daily (CH2O)", minimum=1, maximum=3, step=1, info="Lượng nước uống mỗi ngày (1: ít, 3: nhiều)")
+
+    with gr.Group():
+        gr.Markdown("## Health-related Factors")
+        with gr.Row():
+            SMOKE = gr.Dropdown(label="Smokes (SMOKE)", choices=["yes", "no"], info="Bạn có hút thuốc không?")
+            SCC = gr.Dropdown(label="Monitor calories consumption (SCC)", choices=["yes", "no"], info="Bạn có kiểm soát lượng calo nạp vào không?")
+        with gr.Row():
+            CALC = gr.Dropdown(label="Consumption of alcohol (CALC)", choices=["no", "Sometimes", "Frequently", "Always"], info="Tần suất uống rượu/bia")
+
+    Model = gr.Dropdown(
+        label="Model",
+        choices=[
+            "Logistic regression",
+            "K nearest neighbors",
+            "Decision tree",
+            "Random forest",
+            "XGBoost",
+            "Voting classifier"
+        ],
+        info="Chọn mô hình dự đoán"
     )
 
-# Launch app
-app.launch()
+    Prediction = gr.Textbox(label="Obesity Level Classification")
+    Advice = gr.Textbox(label="Lời khuyên cho bạn", interactive=False)
+
+    with gr.Row():
+        submit_button = gr.Button("Predict")
+        submit_button.click(fn=predict_obesity_level,
+                            outputs=[Prediction, Advice],
+                            inputs=[Model, Age, Height, Weight, FCVC, NCP, CH2O, FAF, TUE,
+                                    Gender, Family_history, FAVC, CAEC, SMOKE, SCC, CALC, MTRANS
+                                    ],
+                            queue=True)
+        clear_button = gr.ClearButton(components=[Prediction, Advice], value="Clear")
+        
+    app.launch()

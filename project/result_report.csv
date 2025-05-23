@@ -1,7 +1,0 @@
-,params,mean_fit_time,mean_score_time,mean_test_score,mean_train_score,model_name
-0,"{'p': 1, 'n_neighbors': 3}",0.026204490661621095,1.2066066265106201,1.0,1.0,KNN
-1,"{'solver': 'liblinear', 'penalty': 'l2', 'max_iter': 10000, 'C': 0.1}",4.476906108856201,0.00827927589416504,1.0,1.0,logistic_regression
-2,"{'min_samples_leaf': 5, 'max_depth': 10, 'criterion': 'entropy'}",0.07242698669433593,0.005728960037231445,0.9239467849223946,0.9477827050997784,decision_tree
-3,"{'n_estimators': 100, 'min_samples_leaf': 30, 'max_depth': 30, 'criterion': 'gini'}",0.818540096282959,0.024443721771240233,1.0,1.0,random_forest
-4,"{'subsample': 0.8, 'n_estimators': 300, 'max_depth': 10, 'learning_rate': 0.05, 'colsample_bytree': 0.7}",39.600750875473025,0.14120545387268066,1.0,1.0,xg_boost
-5,"XGBClassifier, RandomForestClassifier, LogisticRegression, SVC",16.95508179664612,0.24839863777160645,1.0,1.0,voting_classifier
